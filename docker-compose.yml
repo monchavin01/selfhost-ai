@@ -1,0 +1,265 @@
+# Coding Stack — services definition
+#
+# Two control planes:
+#   User plane  : litellm (:4000) — no Docker access, read-only state
+#   Admin plane : admin-api (:8080, loopback) — the only one that can switch
+#
+# Model profiles (one at a time, activated via make switch):
+#   fast, coder, reason, smart
+
+services:
+  # ============================================================
+  # USER PLANE
+  # ============================================================
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml
+      - ./hooks:/app/hooks:ro
+      - ./state:/state:ro
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - DATABASE_URL=postgresql://litellm:${PG_PASSWORD}@postgres:5432/litellm
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-dummy}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=http://langfuse:3000
+      - PYTHONPATH=/app
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      - postgres
+    networks:
+      - stack
+
+  # ============================================================
+  # ADMIN PLANE — loopback only, separate auth token
+  # ============================================================
+  admin-api:
+    build: ./admin-api
+    container_name: admin-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+    volumes:
+      - ./state:/state
+      - ./:/workspace:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - stack
+
+  # ============================================================
+  # DATA + OBSERVABILITY
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru
+    networks:
+      - stack
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_DB=litellm
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - stack
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: langfuse
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://litellm:${PG_PASSWORD}@postgres:5432/langfuse
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - SALT=${LANGFUSE_SALT}
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+    depends_on:
+      - postgres
+    networks:
+      - stack
+
+  # ============================================================
+  # AUTOCOMPLETE (runs alongside fast/coder/reason)
+  # ============================================================
+  vllm-fim:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-fim
+    profiles: ["fast", "coder", "reason"]
+    restart: unless-stopped
+    ipc: host
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: >
+      --model Qwen/Qwen2.5-Coder-1.5B
+      --dtype float16
+      --max-model-len 8192
+      --gpu-memory-utilization 0.12
+      --max-num-seqs 16
+      --enable-prefix-caching
+      --served-model-name qwen-fim-1.5b
+    networks:
+      - stack
+
+  # ============================================================
+  # PROFILE: fast — GPT-OSS 20B
+  # ============================================================
+  vllm-fast:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-main
+    profiles: ["fast"]
+    restart: unless-stopped
+    ipc: host
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: >
+      --model openai/gpt-oss-20b
+      --dtype auto
+      --max-model-len 32768
+      --gpu-memory-utilization 0.82
+      --max-num-seqs 6
+      --enable-prefix-caching
+      --enable-chunked-prefill
+      --kv-cache-dtype fp8
+      --served-model-name main-model
+    networks:
+      - stack
+
+  # ============================================================
+  # PROFILE: coder — Qwen3-Coder 30B-A3B
+  # ============================================================
+  llama-coder:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: vllm-main
+    profiles: ["coder"]
+    restart: unless-stopped
+    volumes:
+      - hf-cache:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: >
+      -hf unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:UD-Q4_K_XL
+      --host 0.0.0.0 --port 8000
+      --api-key dummy
+      --ctx-size 65536
+      --n-gpu-layers 99
+      --flash-attn
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --alias main-model
+      --jinja
+      --parallel 3
+    networks:
+      - stack
+
+  # ============================================================
+  # PROFILE: reason — Nemotron 3 Nano 30B-A3B
+  # ============================================================
+  llama-reason:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: vllm-main
+    profiles: ["reason"]
+    restart: unless-stopped
+    volumes:
+      - hf-cache:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: >
+      -hf unsloth/Nemotron-3-Nano-30B-A3B-GGUF:UD-Q4_K_XL
+      --host 0.0.0.0 --port 8000
+      --api-key dummy
+      --ctx-size 131072
+      --n-gpu-layers 99
+      --flash-attn
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --temp 0.6 --top-p 0.95 --min-p 0.01
+      --alias main-model
+      --jinja
+      --parallel 2
+    networks:
+      - stack
+
+  # ============================================================
+  # PROFILE: smart — GLM-4.5-Air Q3 (partial CPU offload)
+  # ============================================================
+  llama-smart:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: vllm-main
+    profiles: ["smart"]
+    restart: unless-stopped
+    volumes:
+      - hf-cache:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: >
+      -hf unsloth/GLM-4.5-Air-GGUF:UD-Q3_K_XL
+      --host 0.0.0.0 --port 8000
+      --api-key dummy
+      --ctx-size 32768
+      --n-gpu-layers 99
+      --n-cpu-moe 36
+      --flash-attn
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --alias main-model
+      --jinja
+      --parallel 1
+    networks:
+      - stack
+
+networks:
+  stack:
+    name: coding-stack
+
+volumes:
+  hf-cache:
+  redis-data:
+  pg-data:

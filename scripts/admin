@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Admin CLI — thin wrapper around the admin-api HTTP service.
+# Normally invoked via Makefile targets. Sources .env if present.
+
+set -euo pipefail
+
+if [[ -f .env ]]; then
+  # shellcheck disable=SC1091
+  set -a; source .env; set +a
+fi
+
+API="${ADMIN_API_URL:-http://localhost:8080}"
+TOKEN="${ADMIN_TOKEN:-}"
+
+if [[ -z "$TOKEN" ]]; then
+  echo "error: ADMIN_TOKEN not set in .env" >&2
+  exit 1
+fi
+
+_curl() {
+  curl -sS --fail-with-body \
+    -H "X-Admin-Token: $TOKEN" \
+    -H "Content-Type: application/json" \
+    "$@"
+}
+
+_pretty() {
+  python3 -m json.tool 2>/dev/null || cat
+}
+
+cmd="${1:-}"; shift || true
+
+case "$cmd" in
+  status)
+    _curl "$API/status" | _pretty
+    ;;
+
+  switch)
+    PROFILE="${1:?profile required: fast|coder|reason|smart|off}"
+    echo "→ switching to '$PROFILE' (30-90s on first use of a profile)..."
+    _curl -X POST "$API/switch" -d "{\"profile\": \"$PROFILE\"}" | _pretty
+    ;;
+
+  lock)
+    PROFILE="${1:?profile required}"
+    REASON="${2:-locked by admin}"
+    _curl -X POST "$API/lock" \
+      -d "{\"profile\": \"$PROFILE\", \"reason\": \"$REASON\"}" | _pretty
+    ;;
+
+  unlock)
+    _curl -X POST "$API/unlock" | _pretty
+    ;;
+
+  reset)
+    echo "→ resetting state and stopping all models..."
+    _curl -X POST "$API/reset" | _pretty
+    ;;
+
+  *)
+    echo "usage: $(basename "$0") <status|switch|lock|unlock|reset> [args]" >&2
+    exit 1
+    ;;
+esac
