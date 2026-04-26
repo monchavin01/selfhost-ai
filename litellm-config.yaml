@@ -46,6 +46,15 @@ model_list:
     model_info:
       mode: completion
 
+  # Local CPU-only profile for Mac/no-GPU testing
+  - model_name: local
+    litellm_params:
+      model: openai/main-model
+      api_base: http://vllm-main:8000/v1
+      api_key: dummy
+    model_info:
+      mode: chat
+
   # Free external frontier
   - model_name: coding-smart
     litellm_params:
@@ -66,4 +75,5 @@ litellm_settings:
     type: redis
     host: redis
     port: 6379
+    password: os.environ/REDIS_PASSWORD
   request_timeout: 300

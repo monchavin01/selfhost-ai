@@ -28,10 +28,12 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_HOST=http://langfuse:3000
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - PYTHONPATH=/app
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - stack
 
@@ -62,7 +64,7 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
-    command: redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 1gb --maxmemory-policy allkeys-lru
     networks:
       - stack
 
@@ -76,23 +78,148 @@ services:
       - POSTGRES_DB=litellm
     volumes:
       - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
     networks:
       - stack
 
   langfuse:
-    image: langfuse/langfuse:latest
+    image: langfuse/langfuse:3
     container_name: langfuse
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=postgresql://litellm:${PG_PASSWORD}@postgres:5432/langfuse
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
       - SALT=${LANGFUSE_SALT}
-      - NEXTAUTH_URL=http://localhost:3000
+      - DATABASE_URL=postgresql://langfuse:${LANGFUSE_PG_PASSWORD}@langfuse-postgres:5432/langfuse
+      - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://${LANGFUSE_CLICKHOUSE_USER}:${LANGFUSE_CLICKHOUSE_PASSWORD}@langfuse-clickhouse:9000
+      - CLICKHOUSE_USER=${LANGFUSE_CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_CLUSTER_ENABLED=false
+      - REDIS_HOST=langfuse-redis
+      - REDIS_PORT=6379
+      - REDIS_AUTH=${LANGFUSE_REDIS_AUTH}
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_EVENT_UPLOAD_REGION=auto
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=${LANGFUSE_MINIO_USER}
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${LANGFUSE_MINIO_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://langfuse-minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      - LANGFUSE_S3_EVENT_UPLOAD_PREFIX=events/
+      - LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_MEDIA_UPLOAD_REGION=auto
+      - LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=${LANGFUSE_MINIO_USER}
+      - LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${LANGFUSE_MINIO_PASSWORD}
+      - LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://langfuse-minio:9000
+      - LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE=true
+      - LANGFUSE_S3_MEDIA_UPLOAD_PREFIX=media/
+      - NEXTAUTH_URL=${LANGFUSE_URL:-http://localhost:3000}
+      - NEXT_PUBLIC_ENABLE_SIGNUP=${LANGFUSE_ENABLE_SIGNUP:-true}
       - TELEMETRY_ENABLED=false
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+      - LANGFUSE_INIT_ORG_ID=${LANGFUSE_INIT_ORG_ID:-}
+      - LANGFUSE_INIT_ORG_NAME=${LANGFUSE_INIT_ORG_NAME:-}
+      - LANGFUSE_INIT_PROJECT_ID=${LANGFUSE_INIT_PROJECT_ID:-}
+      - LANGFUSE_INIT_PROJECT_NAME=${LANGFUSE_INIT_PROJECT_NAME:-}
+      - LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      - LANGFUSE_INIT_PROJECT_SECRET_KEY=${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      - LANGFUSE_INIT_USER_EMAIL=${LANGFUSE_INIT_USER_EMAIL:-}
+      - LANGFUSE_INIT_USER_NAME=${LANGFUSE_INIT_USER_NAME:-}
+      - LANGFUSE_INIT_USER_PASSWORD=${LANGFUSE_INIT_USER_PASSWORD:-}
     depends_on:
-      - postgres
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+    networks:
+      - stack
+
+  langfuse-postgres:
+    image: postgres:17-alpine
+    container_name: langfuse-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=${LANGFUSE_PG_PASSWORD}
+      - POSTGRES_DB=langfuse
+      - TZ=UTC
+      - PGTZ=UTC
+    volumes:
+      - langfuse-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - stack
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=${LANGFUSE_CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+      - ./langfuse/clickhouse-config.xml:/etc/clickhouse-server/config.d/config.xml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+    networks:
+      - stack
+
+  langfuse-minio:
+    image: minio/minio:latest
+    container_name: langfuse-minio
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      - MINIO_ROOT_USER=${LANGFUSE_MINIO_USER}
+      - MINIO_ROOT_PASSWORD=${LANGFUSE_MINIO_PASSWORD}
+    volumes:
+      - langfuse-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+    networks:
+      - stack
+
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: langfuse-redis
+    restart: unless-stopped
+    command: >
+      --requirepass ${LANGFUSE_REDIS_AUTH}
+      --maxmemory-policy noeviction
+    volumes:
+      - langfuse-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$LANGFUSE_REDIS_AUTH\" ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
     networks:
       - stack
 
@@ -255,6 +382,31 @@ services:
     networks:
       - stack
 
+  # ============================================================
+  # PROFILE: local — Qwen2.5 0.5B (CPU-only, no GPU required)
+  # For local testing on macOS / machines without NVIDIA.
+  # ~300 MB download, ~500 MB RAM. Not for production use.
+  # ============================================================
+  llama-local:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: vllm-main
+    profiles: ["local"]
+    restart: unless-stopped
+    volumes:
+      - hf-cache:/models
+    command: >
+      -hf bartowski/Qwen2.5-0.5B-Instruct-GGUF:Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
+      --host 0.0.0.0 --port 8000
+      --api-key dummy
+      --ctx-size 4096
+      --n-gpu-layers 0
+      --threads 4
+      --alias main-model
+      --jinja
+      --parallel 4
+    networks:
+      - stack
+
 networks:
   stack:
     name: coding-stack
@@ -263,3 +415,8 @@ volumes:
   hf-cache:
   redis-data:
   pg-data:
+  langfuse-pg-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:
+  langfuse-redis-data:

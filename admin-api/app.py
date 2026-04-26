@@ -117,11 +117,11 @@ async def wait_ready() -> None:
 # Request models
 # --------------------------------------------------------------------
 class SwitchReq(BaseModel):
-    profile: Literal["fast", "coder", "reason", "smart", "off"]
+    profile: Literal["fast", "coder", "reason", "smart", "local", "off"]
 
 
 class LockReq(BaseModel):
-    profile: Literal["fast", "coder", "reason", "smart"]
+    profile: Literal["fast", "coder", "reason", "smart", "local"]
     reason: str = "locked by admin"
 
 

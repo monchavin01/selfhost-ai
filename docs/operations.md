@@ -219,20 +219,29 @@ bundled here.
 
 ## Backup
 
-The only data worth keeping long-term is the Postgres volume (contains
-Langfuse traces and LiteLLM budget/key state). Back up with:
+Two separate Postgres containers hold state worth keeping:
+
+- `postgres` — LiteLLM virtual keys, budgets, request logs
+- `langfuse-postgres` — Langfuse project config and user accounts
 
 ```bash
-docker compose exec postgres pg_dumpall -U litellm > backup-$(date +%F).sql
+# LiteLLM database
+docker compose exec postgres pg_dumpall -U litellm > backup-litellm-$(date +%F).sql
+
+# Langfuse database
+docker compose exec langfuse-postgres pg_dumpall -U langfuse > backup-langfuse-$(date +%F).sql
 ```
 
 Restore on a fresh install:
 
 ```bash
-cat backup-2026-04-19.sql | docker compose exec -T postgres psql -U litellm
+cat backup-litellm-2026-04-19.sql  | docker compose exec -T postgres         psql -U litellm
+cat backup-langfuse-2026-04-19.sql | docker compose exec -T langfuse-postgres psql -U langfuse
 ```
 
 Model weights (`hf-cache` volume) are reproducible — no need to back up.
+Langfuse trace data lives in ClickHouse (`langfuse-clickhouse-data` volume); back
+that up too if you need historical traces after a full wipe.
 
 ## Upgrading
 
