@@ -11,6 +11,7 @@ model_list:
       api_key: dummy
     model_info:
       mode: chat
+      base_model: openai/gpt-oss-20b
 
   - model_name: coder
     litellm_params:
@@ -20,6 +21,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
+      base_model: unsloth/Qwen3-Coder-30B-A3B-Instruct
 
   - model_name: reason
     litellm_params:
@@ -28,6 +30,7 @@ model_list:
       api_key: dummy
     model_info:
       mode: chat
+      base_model: unsloth/Nemotron-3-Nano-30B-A3B
 
   - model_name: smart
     litellm_params:
@@ -36,6 +39,7 @@ model_list:
       api_key: dummy
     model_info:
       mode: chat
+      base_model: unsloth/GLM-4.5-Air
 
   # Autocomplete — separate backend, always available when fast/coder/reason active
   - model_name: coding-fast
@@ -45,15 +49,8 @@ model_list:
       api_key: dummy
     model_info:
       mode: completion
+      base_model: Qwen/Qwen2.5-Coder-1.5B
 
-  # Local CPU-only profile for Mac/no-GPU testing
-  - model_name: local
-    litellm_params:
-      model: openai/main-model
-      api_base: http://vllm-main:8000/v1
-      api_key: dummy
-    model_info:
-      mode: chat
 
   # Free external frontier
   - model_name: coding-smart

@@ -44,6 +44,7 @@ help:
 	@echo "    make reset             Recover from stuck state"
 	@echo ""
 	@echo "  Testing"
+	@echo "    make models            Show all profiles and their underlying model weights"
 	@echo "    make test              Send a test chat completion to the active profile"
 	@echo "    make ping              Hit all health endpoints"
 	@echo ""
@@ -187,6 +188,10 @@ off:    ; @$(ADMIN) switch off
 # ----------------------------------------------------------------
 # Testing / smoke tests
 # ----------------------------------------------------------------
+.PHONY: models
+models:
+	@./scripts/models
+
 .PHONY: ping
 ping:
 	@echo -n "LiteLLM   : "; curl -sS http://localhost:4000/health/readiness -o /dev/null -w "%{http_code}\n" || echo "DOWN"

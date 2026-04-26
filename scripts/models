@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Show all configured profiles and their underlying model weights.
+
+set -euo pipefail
+
+if [[ -f .env ]]; then
+  set -a; source .env; set +a
+fi
+
+ACTIVE=$(cat state/active-profile 2>/dev/null || echo off)
+
+echo ""
+echo "  Profiles → underlying model weights:"
+
+curl -sS "http://localhost:4000/model/info" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -o /tmp/litellm_model_info.json
+
+python3 - "$ACTIVE" /tmp/litellm_model_info.json << 'EOF'
+import json, sys
+active = sys.argv[1]
+d = json.load(open(sys.argv[2]))
+for m in d.get("data", []):
+    name = m.get("model_name", "?")
+    base = (m.get("model_info") or {}).get("base_model") \
+        or (m.get("litellm_params") or {}).get("model", "?")
+    tag  = "  <-- active" if name == active else ""
+    print(f"    {name:15} {base}{tag}")
+EOF
+
+echo ""
+echo "  Active backend (loaded model):"
+ARGS=$(docker inspect vllm-main --format '{{join .Args " "}}' 2>/dev/null || true)
+if [[ -z "$ARGS" ]]; then
+  echo "    (no model backend running — activate a profile first)"
+else
+  echo "$ARGS" | python3 -c "
+import sys, re
+args = sys.stdin.read()
+m = re.search(r'(?:--model|-hf)\s+(\S+)', args)
+print('   ', m.group(1) if m else '(unknown)')
+"
+fi
+echo ""

@@ -31,7 +31,7 @@ SWITCHING_LOCK = STATE_DIR / "switching"
 ADMIN_LOCK = STATE_DIR / "locked"
 
 COMPOSE_FILE = "/workspace/docker-compose.yml"
-SWITCH_TIMEOUT = 180
+SWITCH_TIMEOUT = 300
 POLL_INTERVAL = 3
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
@@ -81,7 +81,7 @@ async def run_cmd(*cmd: str, check: bool = True) -> tuple[int, str, str]:
     rc = proc.returncode or 0
     if check and rc != 0:
         raise HTTPException(
-            500, f"command failed ({rc}): {' '.join(cmd)} :: {err.decode()[:500]}"
+            500, f"command failed ({rc}): {' '.join(cmd)} :: {err.decode()[-3000:]}"
         )
     return rc, out.decode(), err.decode()
 
@@ -95,7 +95,7 @@ async def stop_all_model_containers() -> None:
 async def start_profile(profile: str) -> None:
     await run_cmd(
         "docker", "compose", "-f", COMPOSE_FILE,
-        "--profile", profile, "up", "-d",
+        "--profile", profile, "up", "-d", "--no-recreate",
     )
 
 

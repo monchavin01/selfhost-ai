@@ -7,6 +7,12 @@
 # Model profiles (one at a time, activated via make switch):
 #   fast, coder, reason, smart
 
+# Explicit project name so admin-api (which mounts this file at /workspace)
+# uses the same name as the host. Without this, Docker Compose infers the name
+# from the directory — "selfhost-stack" on host vs "workspace" inside the
+# container — causing container name conflicts on every profile switch.
+name: selfhost-stack
+
 services:
   # ============================================================
   # USER PLANE
@@ -382,30 +388,6 @@ services:
     networks:
       - stack
 
-  # ============================================================
-  # PROFILE: local — Qwen2.5 0.5B (CPU-only, no GPU required)
-  # For local testing on macOS / machines without NVIDIA.
-  # ~300 MB download, ~500 MB RAM. Not for production use.
-  # ============================================================
-  llama-local:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    container_name: vllm-main
-    profiles: ["local"]
-    restart: unless-stopped
-    volumes:
-      - hf-cache:/models
-    command: >
-      -hf bartowski/Qwen2.5-0.5B-Instruct-GGUF:Qwen2.5-0.5B-Instruct-Q4_K_M.gguf
-      --host 0.0.0.0 --port 8000
-      --api-key dummy
-      --ctx-size 4096
-      --n-gpu-layers 0
-      --threads 4
-      --alias main-model
-      --jinja
-      --parallel 4
-    networks:
-      - stack
 
 networks:
   stack:
