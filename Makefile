@@ -12,7 +12,7 @@ endif
 
 COMPOSE     := docker compose
 ADMIN       := ./scripts/admin
-PROFILES    := fast coder reason smart local
+PROFILES    := fast coder reason smart qwen3
 
 # ----------------------------------------------------------------
 # Default target — friendly help screen
@@ -38,7 +38,7 @@ help:
 	@echo ""
 	@echo "  Profile control"
 	@echo "    make status            Show active profile, locks, containers"
-	@echo "    make switch P=coder    Activate a profile: fast | coder | reason | smart | off"
+	@echo "    make switch P=coder    Activate a profile: fast | coder | reason | smart | qwen3 | off"
 	@echo "    make lock P=coder R='demo'   Pin profile, reject switch requests"
 	@echo "    make unlock            Remove lock"
 	@echo "    make reset             Recover from stuck state"
@@ -58,14 +58,10 @@ help:
 	@echo "    make coder             Same as: make switch P=coder"
 	@echo "    make reason            Same as: make switch P=reason"
 	@echo "    make smart             Same as: make switch P=smart"
-	@echo "    make local             Same as: make switch P=local  (CPU-only, Mac/no-GPU)"
+	@echo "    make qwen3             Same as: make switch P=qwen3  (Qwen3-32B, 24GB+ VRAM)"
 	@echo "    make off               Same as: make switch P=off"
 	@echo ""
-	@echo "  Mac / no-GPU testing"
-	@echo "    make check-mac         Validate setup without GPU requirement"
-	@echo "    make up                Start core services (works on Mac)"
-	@echo "    make local             Load Qwen2.5-0.5B (CPU, ~300 MB, no HF token needed)"
-	@echo ""
+
 
 # ----------------------------------------------------------------
 # Setup
@@ -96,24 +92,6 @@ check:
 	@docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L \
 	  >/dev/null 2>&1 || { echo "✗ GPU not visible to Docker. Install nvidia-container-toolkit."; exit 1; }
 	@echo "✓ GPU accessible from Docker"
-
-.PHONY: check-mac
-check-mac:
-	@echo "→ checking .env (Mac / no-GPU mode)..."
-	@test -f .env || { echo "✗ .env missing. Run: make init"; exit 1; }
-	@grep -q "^ADMIN_TOKEN=" .env && ! grep -q "^ADMIN_TOKEN=change-this" .env || \
-	  { echo "✗ ADMIN_TOKEN not customized in .env"; exit 1; }
-	@grep -q "^LITELLM_MASTER_KEY=" .env && ! grep -q "^LITELLM_MASTER_KEY=sk-change" .env || \
-	  { echo "✗ LITELLM_MASTER_KEY not customized in .env"; exit 1; }
-	@grep -q "^PG_PASSWORD=" .env && ! grep -q "^PG_PASSWORD=change" .env || \
-	  { echo "✗ PG_PASSWORD not customized in .env"; exit 1; }
-	@echo "✓ .env looks good"
-	@echo "→ checking Docker..."
-	@docker info >/dev/null 2>&1 || { echo "✗ Docker daemon not reachable"; exit 1; }
-	@echo "✓ Docker is running"
-	@echo "✓ GPU check skipped (local profile uses CPU-only inference)"
-	@echo ""
-	@echo "  Ready. Run: make build && make up && make local"
 
 .PHONY: build
 build:
@@ -177,12 +155,12 @@ reset:
 	@$(ADMIN) reset
 
 # Profile shortcuts
-.PHONY: fast coder reason smart local off
+.PHONY: fast coder reason smart qwen3 off
 fast:   ; @$(ADMIN) switch fast
 coder:  ; @$(ADMIN) switch coder
 reason: ; @$(ADMIN) switch reason
 smart:  ; @$(ADMIN) switch smart
-local:  ; @$(ADMIN) switch local
+qwen3:  ; @$(ADMIN) switch qwen3
 off:    ; @$(ADMIN) switch off
 
 # ----------------------------------------------------------------

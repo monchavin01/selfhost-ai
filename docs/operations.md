@@ -255,3 +255,158 @@ make restart              # restart core
 
 Check release notes on each service before major version bumps:
 vLLM, llama.cpp, LiteLLM, Langfuse. Breaking changes happen.
+
+---
+
+## Sustainability & production hardening
+
+These improvements make the stack more reliable for continuous multi-user operation.
+
+### 1. Health checks on model containers
+
+Add to each model service in `docker-compose.yml`:
+
+```yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+```
+
+This lets `docker compose ps` show container health and lets admin-api verify readiness without custom polling.
+
+### 2. Resource limits
+
+Prevent a runaway model from eating all host RAM:
+
+```yaml
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+```
+
+### 3. Request retries with exponential backoff
+
+LiteLLM supports automatic retries. Add to `litellm-config.yaml`:
+
+```yaml
+litellm_settings:
+  num_retries: 3
+  retry_after: 1
+  timeout: 300
+```
+
+### 4. Separate read replicas for Postgres (optional)
+
+If you have many users hitting the LiteLLM UI or virtual key API, the single Postgres instance can become a bottleneck. LiteLLM supports a read replica URL:
+
+```yaml
+general_settings:
+  database_url: os.environ/DATABASE_URL
+  database_read_replica_url: os.environ/DATABASE_READ_URL
+```
+
+### 5. Automated backups
+
+Add a cron job or systemd timer:
+
+```bash
+# /etc/cron.daily/backup-coding-stack
+#!/bin/bash
+docker compose exec postgres pg_dumpall -U litellm > /backups/litellm-$(date +%F).sql
+docker compose exec langfuse-postgres pg_dumpall -U langfuse > /backups/langfuse-$(date +%F).sql
+tar czf /backups/hf-cache-$(date +%F).tar.gz /var/lib/docker/volumes/selfhost-stack_hf-cache/
+```
+
+Model weights are reproducible (no need to back up), but backing up the HF cache saves re-download time after a full wipe.
+
+### 6. Monitoring & alerting
+
+LiteLLM exposes Prometheus metrics at `http://localhost:4000/metrics`. Key metrics to alert on:
+
+| Metric | Threshold | Action |
+|--------|-----------|--------|
+| `litellm_requests_error` | > 5% error rate | Check model health |
+| `nvidia_gpu_memory_used_bytes` / total > 0.95 | OOM imminent | Switch to `off` |
+| `docker_container_cpu_usage` | > 90% for 5m | Investigate runaway process |
+| `litellm_proxy_total_requests` | spike > 3× baseline | Possible abuse |
+
+### 7. Request queuing for multi-user
+
+With one GPU, concurrent requests compete for VRAM. LiteLLM's Redis cache helps with repeated prompts, but for true queuing, configure:
+
+```yaml
+litellm_settings:
+  cache: true
+  cache_params:
+    type: redis
+    host: redis
+    port: 6379
+    password: os.environ/REDIS_PASSWORD
+  # Optional: rate limiting per virtual key
+  rate_limit:
+    - model: fast
+      tpm: 100000
+      rpm: 1000
+```
+
+Create virtual keys per user in the LiteLLM UI (`http://localhost:4000/ui`) so each user has their own rate limit and budget.
+
+### 8. Graceful shutdown
+
+Ensure model containers release VRAM properly. vLLM and llama.cpp both handle SIGTERM, but Docker's default timeout is 10s. Increase it:
+
+```yaml
+    stop_grace_period: 60s
+```
+
+### 9. Model weight pre-warming
+
+After upgrades or host reboots, the first switch to a profile downloads weights. Run `make warmup` overnight to cache all models:
+
+```bash
+# Add to crontab for weekly refresh
+0 2 * * 0 cd /path/to/selfhost-stack && make warmup
+```
+
+### 10. Cost tracking per user
+
+LiteLLM's virtual key system tracks spend per key. Export to your billing system:
+
+```bash
+curl -sS http://localhost:4000/key/info \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  | python3 -c "import json,sys; [print(f'{k[\"key_alias\"]}: ${k[\"spend\"]:.2f}') for k in json.load(sys.stdin)['keys']]"
+```
+
+### 11. Update cycle
+
+| Component | Check frequency | Command |
+|-----------|----------------|---------|
+| Docker images | Weekly | `make pull` |
+| Model weights | Monthly | `make warmup` (pulls latest GGUF revisions) |
+| Security patches | Daily | `apt update` on host |
+| Langfuse traces | Weekly | Archive old traces to S3 |
+
+### 12. Claude Code / OpenCode specific tips
+
+Both tools send large context windows. For Claude Code specifically:
+
+- **Default to `coder`** — it's trained on coding workflows and handles tool-use well.
+- **Set context limit** — Claude Code can send 100K+ tokens. Cap it to the model's limit:
+  ```bash
+  claude config set maxContextTokens 60000  # for 64K coder profile
+  ```
+- **Use `coding-fast` for autocomplete** — configure your IDE (Cursor, VS Code) to use `http://localhost:4000/v1` with model `coding-fast`.
+- **Lock the profile during long sessions** — prevents accidental swaps mid-refactor:
+  ```bash
+  make lock P=coder R='Claude Code deep refactor'
+  ```

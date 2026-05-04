@@ -388,6 +388,43 @@ services:
     networks:
       - stack
 
+  # ============================================================
+  # PROFILE: qwen3 — Qwen3-32B dense (Q3_K_XL, 24GB+ VRAM recommended)
+  # ============================================================
+  # NOTE: Qwen3-32B dense is ~16GB at Q3_K_XL plus KV cache.
+  # This exceeds 16GB VRAM. Only enable if your GPU has ≥24GB,
+  # or add --n-gpu-layers 60 for partial offload on 16GB.
+  # The Qwen3-30B-A3B in the "coder" profile is the MoE variant
+  # and fits comfortably in 16GB. Use that instead for 16GB GPUs.
+  # ============================================================
+  llama-qwen3:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: vllm-main
+    profiles: ["qwen3"]
+    restart: unless-stopped
+    volumes:
+      - hf-cache:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    command: >
+      -hf unsloth/Qwen3-32B-GGUF:Q3_K_XL
+      --host 0.0.0.0 --port 8000
+      --api-key dummy
+      --ctx-size 32768
+      --n-gpu-layers 99
+      --flash-attn
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --alias main-model
+      --jinja
+      --parallel 2
+    networks:
+      - stack
+
 
 networks:
   stack:

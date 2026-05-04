@@ -41,6 +41,16 @@ model_list:
       mode: chat
       base_model: unsloth/GLM-4.5-Air
 
+  - model_name: qwen3
+    litellm_params:
+      model: openai/main-model
+      api_base: http://vllm-main:8000/v1
+      api_key: dummy
+    model_info:
+      mode: chat
+      supports_function_calling: true
+      base_model: unsloth/Qwen3-32B
+
   # Autocomplete — separate backend, always available when fast/coder/reason active
   - model_name: coding-fast
     litellm_params:

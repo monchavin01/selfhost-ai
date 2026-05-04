@@ -20,7 +20,7 @@ STATE_DIR = Path("/state")
 ACTIVE_FILE = STATE_DIR / "active-profile"
 ADMIN_LOCK = STATE_DIR / "locked"
 
-SWITCHABLE_MODELS = {"fast", "coder", "reason", "smart", "local"}
+SWITCHABLE_MODELS = {"fast", "coder", "reason", "smart", "qwen3"}
 
 
 class ProfileGuard(CustomLogger):

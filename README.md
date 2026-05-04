@@ -32,18 +32,19 @@ make test          # smoke test
 ```
 
 Point any OpenAI-compatible client at `http://localhost:4000/v1` with your
-`LITELLM_MASTER_KEY`. Models: `fast`, `coder`, `reason`, `smart`,
+`LITELLM_MASTER_KEY`. Models: `fast`, `coder`, `reason`, `smart`, `qwen3`,
 `coding-fast` (autocomplete), `coding-smart` (free OpenRouter frontier).
 
-## The five profiles
+## The profiles
 
-| `make <cmd>` | Model                    | Speed   | Ctx  | Best for              |
-|--------------|--------------------------|---------|------|-----------------------|
-| `make fast`  | GPT-OSS 20B              | 140 t/s | 32K  | daily chat, concurrent |
-| `make coder` | Qwen3-Coder 30B-A3B      | 60 t/s  | 64K  | agentic coding        |
-| `make reason`| Nemotron 3 Nano 30B-A3B  | 55 t/s  | 128K | reasoning, long ctx   |
-| `make smart` | GLM-4.5-Air Q3           | 15 t/s  | 32K  | hard problems (slow)  |
-| `make off`   | —                        | —       | —    | stop all models       |
+| `make <cmd>` | Model                    | Engine    | Speed   | Ctx  | Best for              |
+|--------------|--------------------------|-----------|---------|------|-----------------------|
+| `make fast`  | GPT-OSS 20B              | vLLM      | 140 t/s | 32K  | daily chat, concurrent |
+| `make coder` | Qwen3-Coder 30B-A3B      | llama.cpp | 60 t/s  | 64K  | agentic coding        |
+| `make reason`| Nemotron 3 Nano 30B-A3B  | llama.cpp | 55 t/s  | 128K | reasoning, long ctx   |
+| `make smart` | GLM-4.5-Air Q3           | llama.cpp | 15 t/s  | 32K  | hard problems (slow)  |
+| `make qwen3` | Qwen3-32B Q3_K_XL        | llama.cpp | 25 t/s  | 32K  | Qwen3 dense (24GB+ VRAM) |
+| `make off`   | —                        | —         | —       | —    | stop all models       |
 
 First switch to a profile takes 30-90s (model load). After that, instant.
 
