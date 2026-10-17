@@ -28,6 +28,7 @@ help:
 	@echo "    make vast-offers   List the cheapest Vast offers that meet the minimum spec"
 	@echo "    make vast-up       Rent the cheapest one, wait for READY (prints cold-start time)"
 	@echo "    make vast-tunnel   Forward :4000 (ThaiDub) and :8001 (bench) to the rental"
+	@echo "    make vast-voices   Upload voices/ to the rental (also done by vast-up)"
 	@echo "    make vast-ssh / vast-logs / vast-template / vast-down (asks before destroying)"
 	@echo "    make run        Test-run the image locally (GPU, --cpus $(CPUS), --memory $(MEMORY))"
 	@echo "    make status     Health, last GPU lines, last requests, voices hash"
@@ -55,8 +56,8 @@ run:
 	docker run --rm -it --gpus all --cpus $(CPUS) --memory $(MEMORY) --env-file .env \
 		-p 127.0.0.1:4000:4000 -v $(CURDIR)/data:/data $(IMAGE)
 
-.PHONY: vast-offers vast-up vast-ssh vast-tunnel vast-logs vast-template vast-down
-vast-offers vast-up vast-ssh vast-tunnel vast-logs vast-template vast-down:
+.PHONY: vast-offers vast-up vast-voices vast-ssh vast-tunnel vast-logs vast-template vast-down
+vast-offers vast-up vast-voices vast-ssh vast-tunnel vast-logs vast-template vast-down:
 	./scripts/vast.sh $(subst vast-,,$@)
 
 .PHONY: status
