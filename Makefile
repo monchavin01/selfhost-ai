@@ -10,6 +10,8 @@ ifneq (,$(wildcard .env))
 endif
 
 IMAGE      ?= ghcr.io/monchavin01/thaidub-gpu-server:dev
+HUNYUAN_IMAGE ?= $(IMAGE)-hunyuan
+VLLM_BASE  := vllm/vllm-openai:v0.31.0-cu129
 CPUS       ?= 8
 MEMORY     ?= 24g
 
@@ -21,8 +23,8 @@ help:
 	@echo "  ThaiDub GPU model server"
 	@echo ""
 	@echo "    make init       Copy .env.example to .env (first time only)"
-	@echo "    make build      Build the image ($(IMAGE))"
-	@echo "    make push       Push the image for the Vast/RunPod template"
+	@echo "    make build      Build both tags: light ($(IMAGE)) and hunyuan ($(HUNYUAN_IMAGE))"
+	@echo "    make push       Push both tags for the Vast/RunPod template"
 	@echo "    make run        Test-run the image locally (GPU, --cpus $(CPUS), --memory $(MEMORY))"
 	@echo "    make status     Health, last GPU lines, last requests, voices hash"
 	@echo "    make bench      Throughput, contention, VRAM and contract checks against a live server"
@@ -37,10 +39,12 @@ init:
 .PHONY: build
 build:
 	docker build -t $(IMAGE) .
+	docker build -t $(HUNYUAN_IMAGE) --build-arg BASE_IMAGE=$(VLLM_BASE) .
 
 .PHONY: push
 push:
 	docker push $(IMAGE)
+	docker push $(HUNYUAN_IMAGE)
 
 .PHONY: run
 run:

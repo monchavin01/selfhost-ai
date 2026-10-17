@@ -21,20 +21,22 @@ Exact repos and commits are pinned in [`models.yaml`](models.yaml). The API cont
 
 ## Rent and run on Vast.ai
 
-1. Build and push the image (from any machine with Docker; the Mac is not needed):
+1. Build and push the image (from any machine with Docker; the Mac is not needed). This makes two tags:
+   - `<tag>`: F5 + whisper only. It is small, so a fresh rental pulls it fast. Use it by default.
+   - `<tag>-hunyuan`: adds vLLM for `ENABLE_HUNYUAN=1`. It is much larger.
 
    ```bash
    make build push IMAGE=ghcr.io/<you>/thaidub-gpu-server:<tag>
    ```
 
 2. Create a Vast template:
-   - Image: the tag above. Launch mode **SSH** (gives you `ssh` for the tunnel).
+   - Image: `<tag>`, or `<tag>-hunyuan` when you also set `ENABLE_HUNYUAN=1`. Launch mode **SSH** (gives you `ssh` for the tunnel).
    - On-start script: `nohup /app/scripts/start.sh > /data/start.log 2>&1 &`
      (SSH mode replaces the image entrypoint, so the onstart script starts the server.)
    - Env: `-e LITELLM_MASTER_KEY=<key>` and optionally `-e ENABLE_HUNYUAN=1`, `-e HF_TOKEN=...`,
      `-e DEFAULT_VOICE=<voice_id>` (image default `m_young_01`).
-   - Disk: **60 GB**. Weights are about 6 GB, or about 14 GB with hunyuan, and the image is large because it
-     ships vLLM. Vast fixes disk size at creation, so leave headroom.
+   - Disk: **40 GB** for the light tag, **60 GB** for hunyuan. Weights are about 6 GB, or about 14 GB with hunyuan.
+     Vast fixes disk size at creation, so leave headroom.
    - GPU: RTX 3090 24 GB. The image needs host driver >= 575 (CUDA 12.9), so filter offers by driver version.
 3. Rent an offer with the template, then wait for READY:
 

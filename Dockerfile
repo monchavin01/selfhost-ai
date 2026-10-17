@@ -1,13 +1,19 @@
-# One image, no weights (models are fetched into $HF_HOME at start).
-# Base: vLLM image (CUDA 12.9 build; hunyuan FP8 on Ampere runs via vLLM's Marlin kernels). Needs host driver >= 575.
+# One Dockerfile, two tags, no weights (models are fetched into $HF_HOME at start):
+#   light (default)  BASE_IMAGE=ubuntu:24.04 — F5 + whisper only; small, so a fresh rental pulls it fast.
+#   hunyuan          BASE_IMAGE=vllm/vllm-openai:v0.31.0-cu129 — adds vLLM for ENABLE_HUNYUAN=1 (FP8 on Ampere via
+#                    vLLM's Marlin kernels).
+# CUDA libs come from the torch cu129 wheels, so the light base needs none; host driver must be >= 575 (CUDA 12.9).
 # Backend and LiteLLM get their own uv venvs so torch/numpy/fastapi pins cannot clash with vLLM's.
 # Runs as root on purpose: Vast/RunPod start containers as root and mount volumes root-owned.
-FROM vllm/vllm-openai:v0.31.0-cu129
+ARG BASE_IMAGE=ubuntu:24.04
+FROM ${BASE_IMAGE}
+# Plain bases don't ask the NVIDIA runtime for nvidia-smi (the GPU logger needs it); the vLLM base already does.
+ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ffmpeg libsndfile1 \
+ && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg libsndfile1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Backend venv. torch from the cu129 index (wheels bundle cuDNN 9 + cuBLAS 12 that CTranslate2 4.x needs;

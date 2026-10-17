@@ -58,6 +58,7 @@ wait_http http://127.0.0.1:8001/ready backend 900
 echo "backend ready in $(since "$t")"
 
 if [ "$ENABLE_HUNYUAN" = "1" ]; then
+  command -v vllm >/dev/null || { echo "ENABLE_HUNYUAN=1 needs the hunyuan image tag (this one has no vLLM)" >&2; exit 1; }
   # 24 GB card (3090: 24576 MiB). Backend after load ~10 GB: F5 ~3 + whisper-th turbo ~2.5 + whisper-zh large-v3
   # ~3.5 + CUDA contexts ~1. vLLM budget 0.45 x 24 = ~10.8 GB: fp8 7B weights ~8 GB + ~2 GB KV cache
   # (~130 KB/token, 8 KV heads) = ~15k tokens, enough for 4 seqs x 4096. Leaves ~3 GB slack. Backend must load first.
