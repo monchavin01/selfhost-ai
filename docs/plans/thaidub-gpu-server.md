@@ -16,6 +16,14 @@ Status: draft for owner review, 2026-10-17. Nothing built yet.
 - Throughput is the budget: F5 dynamic batching is top priority. `scripts/bench.py` reports 1 vs 4 vs 8 concurrent
   and the F5 / whisper / hunyuan contention slowdown.
 
+## Rental setup (owner, 2026-10-17)
+
+Chosen: Vast.ai RTX 3090 24 GB, hourly. Minimum offer filter (`scripts/vast.sh`): verified, reliability >= 0.99,
+CUDA >= 12.8 (>= 12.9 with hunyuan: vLLM -cu129 base needs driver >= 575), >= 8 vCPU, >= 32 GB RAM, >= 100 GB disk,
+>= 500 down / 200 up Mbps. One command (`make vast-up`) rents the cheapest match and waits for READY; the image
+ships SSH tools, node and Claude Code CLI (pinned) with this repo's CLAUDE.md + ponytail/caveman plugin settings.
+Secrets live in Vast account env vars (encrypted), never in the template or command line.
+
 ## Owner answers (2026-10-17)
 
 - Placement: reshape this coding-stack repo itself into the ThaiDub server (not a side directory).
