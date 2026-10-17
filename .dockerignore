@@ -1,9 +1,12 @@
 .git
-.claude
+.claude/*
+!.claude/settings.json
 docs
 data
 **/__pycache__
 **/.pytest_cache
 .env
+.vast-instance
 *.md
+!CLAUDE.md
 !backend/**/*.md
