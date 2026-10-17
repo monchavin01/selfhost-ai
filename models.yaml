@@ -1,0 +1,18 @@
+models:
+  f5-tts-th:
+    repo: VIZINTZOR/F5-TTS-THAI
+    revision: af023c707f4208e5fc1fce59c1fd1501cfc3fc22
+    files: [model_1000000.pt, vocab.txt]
+  vocos-mel-24khz:
+    repo: charactr/vocos-mel-24khz
+    revision: 0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21
+  whisper-th:
+    repo: deepdml/faster-whisper-large-v3-turbo-ct2
+    revision: 4df90f75321148c3a29a9e2351b7ddf8f5b115a8
+  whisper-zh:
+    repo: Systran/faster-whisper-large-v3
+    revision: edaa852ec7e145841d8ffdb056a99866b5f0a478
+  hunyuan-mt-7b:
+    repo: tencent/Hunyuan-MT-7B-fp8
+    revision: 81e5a3f7199524570ba75e61360e990ba88665e4
+    enabled_by: ENABLE_HUNYUAN
