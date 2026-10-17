@@ -57,8 +57,7 @@ Status: draft for owner review, 2026-10-17. Nothing built yet.
 
 ```
 container (one image, no weights)
-  start.sh  -> tailscaled --tun=userspace-networking (hostname $TS_HOSTNAME)
-            -> fetch models per models.yaml into $HF_HOME (repo + revision pinned)
+  start.sh  -> fetch models per models.yaml into $HF_HOME (repo + revision pinned)
             -> verify voices/manifest.sha256
             -> backend (FastAPI, :8001)   F5 + whisper-th + whisper-zh [+ hunyuan if ENABLE_HUNYUAN=1]
             -> litellm (:4000)            auth, rpm / max_parallel limits, 429 Retry-After, per-request log
@@ -117,15 +116,12 @@ Not in scope: Grafana/Prometheus, autoscaling, multi-cloud layer, Postgres/Langf
 
 ## Open questions
 
-1. **Where is the F5/Whisper backend code running today on the home server?** Not in this repo or ThaiDub. Please
-   commit + push it (or copy it here) so step 3 ports it instead of rewriting, and so the 1.8x slowdown is
-   diagnosed on the real code.
-2. Home server reachable how? (LAN from this Mac times out; Tailscale stopped.) Needed for every acceptance run.
-3. Hunyuan temperature: client default 0.2 vs contract 0.7 — which?
-4. whisper-th / whisper-zh: exact HF repo + revision? (Only F5 is pinned in the prompt.)
-5. Canonical voice bank: `preset-bank-f5-20261016` (11 voices)? Which clip becomes `default`?
-6. Home: stop coding profiles while ThaiDub server runs, or keep both (then whisper must go int8 / smaller)?
-7. Vast: docker image registry to push to (GHCR under `monchavin01`?).
+1. Tailscale (one hostname, e.g. `gpu-vast`) or SSH tunnel only? Build follows the earlier answer: SSH tunnel only.
+2. F5 concurrency: gateway `max_parallel_requests` and `F5_BATCH_MAX` are 4 (old contract); raise both to 8?
+3. Image size: vLLM base + backend torch is pulled on every fresh rental; split hunyuan into its own image/tag?
+4. `DEFAULT_VOICE`: set to `m_young_01` (Claude's pick, owner to confirm).
+5. RunPod SSH into a custom image (no sshd in the image) — check before using RunPod.
+6. Registry for the image (GHCR under `monchavin01` assumed).
 
 ## Interfaces (fixed before parallel build — every piece codes against this)
 

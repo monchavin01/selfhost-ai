@@ -32,7 +32,7 @@ Exact repos and commits are pinned in [`models.yaml`](models.yaml). The API cont
    - On-start script: `nohup /app/scripts/start.sh > /data/start.log 2>&1 &`
      (SSH mode replaces the image entrypoint, so the onstart script starts the server.)
    - Env: `-e LITELLM_MASTER_KEY=<key>` and optionally `-e ENABLE_HUNYUAN=1`, `-e HF_TOKEN=...`,
-     `-e DEFAULT_VOICE=m_young_01`.
+     `-e DEFAULT_VOICE=<voice_id>` (image default `m_young_01`).
    - Disk: **60 GB**. Weights are about 6 GB, or about 14 GB with hunyuan, and the image is large because it
      ships vLLM. Vast fixes disk size at creation, so leave headroom.
    - GPU: RTX 3090 24 GB. The image needs host driver >= 575 (CUDA 12.9), so filter offers by driver version.
@@ -43,18 +43,19 @@ Exact repos and commits are pinned in [`models.yaml`](models.yaml). The API cont
    ```
 
    It prints the time for each phase (`phase fetch`, `phase load`, `phase warm-up`), then `cold start total`, then
-   `READY`.
+   `READY`. `cold start total` starts after Vast has pulled the image; read the pull time from the Vast console.
 4. Open the tunnel from the Mac and point ThaiDub at it:
 
    ```bash
-   ssh -N -L 4000:127.0.0.1:4000 -p <port> root@<host>
+   ssh -N -L 4000:127.0.0.1:4000 -L 8001:127.0.0.1:8001 -p <port> root@<host>
    ```
 
-   ThaiDub `.env`: `LITELLM_BASE_URL=http://localhost:4000/v1` and `LITELLM_API_KEY=<key>`.
+   ThaiDub `.env`: `LITELLM_BASE_URL=http://localhost:4000/v1` and `LITELLM_API_KEY=<key>`. Port 8001 (backend,
+   no auth) is only for `make bench` / the voices check and stays on the tunnel.
 5. Confirm it is the same voice bank as last time. The `sha256` must match the previous rental:
 
    ```bash
-   ssh -p <port> root@<host> 'curl -s 127.0.0.1:8001/voices-manifest'
+   curl -s localhost:8001/voices-manifest      # through the tunnel
    ```
 
 ### Destroy and recreate
@@ -65,8 +66,9 @@ the cache on a provider volume:
 - **Vast:** create a volume, mount it at `/workspace`, and set `-e HF_HOME=/workspace/hf`. A volume costs storage
   while no instance runs. Vast lists volumes per machine, so a recreated instance must be on the same machine to
   reuse it. That last point is inferred from the docs; check it before relying on it.
-- **RunPod:** network volumes (Secure Cloud only) mount at `/workspace`, so set `HF_HOME=/workspace/hf`. RunPod
-  pods take the image's start command, so there is no onstart step there. Set the env vars in the template.
+- **RunPod (fallback, not yet tried):** network volumes (Secure Cloud only) mount at `/workspace`, so set
+  `HF_HOME=/workspace/hf`. Pods use the image's start command and env vars from the template. Open item: the image
+  has no sshd, and RunPod's SSH into a custom image still needs checking before the tunnel works there.
 
 Rule of thumb: rent briefly and rarely, and let the instance disk re-download; rent daily, and use a volume. Steps:
 
@@ -77,12 +79,19 @@ Rule of thumb: rent briefly and rarely, and let the instance disk re-download; r
 
 ## Check and measure
 
-On the instance (or through the tunnel with `LITELLM_URL`):
+On the instance (SSH sessions do not see the template env vars, so pass the key):
 
 ```bash
-make status        # LiteLLM /health, last GPU log lines, last requests, voices hash
-make bench         # F5 at 1/4/8 concurrent, contention F5+whisper+hunyuan, VRAM per model, contract checks
+LITELLM_MASTER_KEY=<key> /app/scripts/status.sh    # LiteLLM /health, last GPU lines, last requests, voices hash
 ```
+
+From the Mac, through the tunnel (both ports forwarded):
+
+```bash
+LITELLM_MASTER_KEY=<key> make bench    # F5 1/4/8 concurrent, contention, VRAM per model, contract checks
+```
+
+`python3 scripts/bench.py --only speech|contention|vram|contract` runs one section.
 
 Logs live in `$LOG_DIR` (default `/data/logs`):
 - `gpu.log`: utilisation %, VRAM used/total and temperature, every 5 s.
