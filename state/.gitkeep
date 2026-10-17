@@ -1,2 +1,0 @@
-# Keep the state/ directory under version control so Docker bind-mounts work
-# on fresh clones, but do not commit actual state files (see ../.gitignore).
