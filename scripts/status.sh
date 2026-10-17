@@ -2,9 +2,12 @@
 # Quick health view: LiteLLM models, GPU, recent requests, voice bank hash.
 set -uo pipefail
 : "${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}"
-LOG_DIR="${LOG_DIR:-/data/logs}"
+W="${DATA_DIRECTORY:-/workspace}"; W="${W%/}"
+LOG_DIR="${LOG_DIR:-$W/logs}"
 BASE="${LITELLM_URL:-http://127.0.0.1:4000}"
 
+echo "== supervisorctl"
+"$W/venvs/tools/bin/supervisorctl" -s "unix://$W/supervisor.sock" status || echo "supervisord unreachable"
 echo "== /health"
 curl -fsS -m 30 -H "Authorization: Bearer $LITELLM_MASTER_KEY" "$BASE/health" || echo "unreachable"
 echo; echo "== gpu.log (last 5)"
