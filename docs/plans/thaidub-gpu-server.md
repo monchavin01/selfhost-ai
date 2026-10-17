@@ -116,12 +116,12 @@ Not in scope: Grafana/Prometheus, autoscaling, multi-cloud layer, Postgres/Langf
 
 ## Open questions
 
-1. Tailscale (one hostname, e.g. `gpu-vast`) or SSH tunnel only? Build follows the earlier answer: SSH tunnel only.
-2. F5 concurrency: gateway `max_parallel_requests` and `F5_BATCH_MAX` are 4 (old contract); raise both to 8?
-3. Image size: vLLM base + backend torch is pulled on every fresh rental; split hunyuan into its own image/tag?
-4. `DEFAULT_VOICE`: set to `m_young_01` (Claude's pick, owner to confirm).
-5. RunPod SSH into a custom image (no sshd in the image) — check before using RunPod.
-6. Registry for the image (GHCR under `monchavin01` assumed).
+Answered 2026-10-17: SSH tunnel only (no Tailscale). F5 `max_parallel_requests` and `F5_BATCH_MAX` raised to 8.
+Image split into a light tag (ubuntu base) and a `-hunyuan` tag (vLLM base).
+
+1. `DEFAULT_VOICE`: set to `m_young_01` (Claude's pick, owner to confirm).
+2. RunPod SSH into a custom image (no sshd in the image) — check before using RunPod.
+3. Registry for the image (GHCR under `monchavin01` assumed).
 
 ## Interfaces (fixed before parallel build — every piece codes against this)
 
@@ -170,7 +170,7 @@ Environment (all optional except LITELLM_MASTER_KEY):
 | LOG_DIR | /data/logs | everything |
 | VOICES_DIR | /app/voices | backend, voices.py |
 | ENABLE_HUNYUAN | 0 | start.sh, fetch_models.py |
-| F5_BATCH_MAX | 4 | backend |
+| F5_BATCH_MAX | 8 | backend |
 | F5_BATCH_WAIT_MS | 15 | backend |
 | F5_DEFAULT_SEED | 0 | backend |
 | DEFAULT_VOICE | (see open question 5) | backend: `voice="default"` maps to this voice_id |
