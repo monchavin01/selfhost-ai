@@ -16,6 +16,17 @@ Status: draft for owner review, 2026-10-17. Nothing built yet.
 - Throughput is the budget: F5 dynamic batching is top priority. `scripts/bench.py` reports 1 vs 4 vs 8 concurrent
   and the F5 / whisper / hunyuan contention slowdown.
 
+## Template + bootstrap (owner, 2026-10-17, supersedes the custom-image design below)
+
+- No custom image. Private Vast template "thaidub-gpu": base `vastai/pytorch:2.11.0-cuda-12.8.1-py312-24.04-2026-10-16`,
+  SSH launch mode, 100 GB, 1x RTX 3090 in Taiwan, verified, reliability >= 0.99; env LITELLM_MASTER_KEY, TS_AUTHKEY,
+  HF_TOKEN. On-start clones this repo at a tag into /workspace and backgrounds `scripts/bootstrap.sh`, then calls
+  Vast's `entrypoint.sh` last (it execs, so nothing after it would run).
+- bootstrap.sh: venvs from hash-pinned `locks/*.txt`, Tailscale 1.104.1 userspace (hostname gpu-vast) and every server
+  under supervisord, models + caches under /workspace, voices uploaded by rsync and hash-checked, warm-up, READY.
+- Network: Tailscale again (owner's fixed fact), SSH tunnel only as fallback. Userspace inbound reaches 127.0.0.1
+  services per tailscale source (netstack acceptTCP); not yet tested on a box.
+
 ## Rental setup (owner, 2026-10-17)
 
 Chosen: Vast.ai RTX 3090 24 GB, hourly. Minimum offer filter (`scripts/vast.sh`): verified, reliability >= 0.99,

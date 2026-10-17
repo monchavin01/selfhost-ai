@@ -27,7 +27,9 @@ Errors: 400 bad input, 401 wrong key (LiteLLM), 404 unknown/refused voice, 429 +
 | path | holds |
 |---|---|
 | `backend/` | FastAPI app; torch/f5/faster_whisper imported lazily so `backend/tests` run without a GPU |
-| `scripts/` | start, onstart, fetch, voices, status, bench, vast — bash or stdlib Python |
+| `scripts/` | bootstrap (the box's whole setup), fetch, voices, status, bench, vast — bash or stdlib Python |
+| `deploy/supervisord.conf` | the box's long-running processes (tailscaled, backend, litellm, vllm, gpu-logger) |
+| `locks/` | `*.in` inputs, `*.txt` hash-pinned locks for Linux x86_64 (`make lock`) |
 | `models.yaml` | every model, pinned to a repo commit — no unpinned weights |
 | `litellm.yaml` | routes and limits; its header lists LiteLLM behaviours still to verify on the GPU |
 | `voices/` | local only: `<voice_id>.neutral.th.wav` + `.txt` (gitignored); only `manifest.sha256` is tracked |
@@ -36,7 +38,7 @@ Errors: 400 bad input, 401 wrong key (LiteLLM), 404 unknown/refused voice, 429 +
 
 - Follow existing patterns and reuse helpers (e.g. `backend/models_manifest.py` is the only models.yaml reader).
 - Business-language names (voice, line, chunk, heard check), type hints, small modules.
-- Pin every version (images, pip, Claude Code). Comments only for the non-obvious why.
+- Pin every version (base image, lock files, uv, Tailscale, Claude Code); the box runs a git tag, never a branch. Comments only for the non-obvious why.
 - Tests describe business rules from the user's side (voice refused when its hash mismatches, verbose_json has
   words...). Flag purely presentational code to the owner instead of testing it by default.
 - The repo is PUBLIC. Never commit voice clips or transcripts (real people's voices, copyrighted lines), `.env`,
@@ -50,7 +52,9 @@ Errors: 400 bad input, 401 wrong key (LiteLLM), 404 unknown/refused voice, 429 +
 
 - The owner's Mac has no NVIDIA GPU and little disk: never pull or build images, install torch/vLLM or load models
   there. Only `make test` (unit tests) and static checks (`bash -n`, `py_compile`) run locally.
-- Everything GPU-side is checked on the rented box in one pass (`make vast-up`, then `scripts/bench.py`).
+- Everything GPU-side is checked on the rented box in one pass (`make vast-up`, then `make bench`).
+- The box is plain `vastai/pytorch` + this repo at a tag: no custom image. Setup changes go in `scripts/bootstrap.sh`
+  (idempotent; never `set -x`; secrets masked) and ship as a new tag.
 - `make vast-down` destroys the rental (disk included) — always confirm with the owner first.
 
 ## Commits
