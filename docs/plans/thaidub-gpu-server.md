@@ -1,6 +1,20 @@
-# Plan: ThaiDub GPU server (home 4070 Ti + Vast 3090)
+# Plan: ThaiDub GPU server (one rented Vast RTX 3090)
 
 Status: draft for owner review, 2026-10-17. Nothing built yet.
+
+## Change of plan (owner, 2026-10-17, supersedes anything below that disagrees)
+
+- ONE server only: rented Vast.ai RTX 3090 24 GB (RunPod as fallback). Home 4070 Ti SUPER retired.
+- No home compose path. One way to run: the image as a Vast/RunPod template. Local `docker run --cpus --memory`
+  only to build/test the image.
+- No two-server identical-voice test. The voices manifest hash stays: it proves a fresh rental holds the same bank
+  as the destroyed one.
+- One 24 GB card holds F5 + whisper-th + whisper-zh (+ hunyuan FP8 behind ENABLE_HUNYUAN). Report VRAM per model
+  and total (backend `/ready` `vram_mib`, `scripts/bench.py --only vram`).
+- Rental lifecycle: fast cold start, start script prints phase timings and READY, clear destroy-and-recreate steps,
+  cache on instance disk vs provider volume compared in README.
+- Throughput is the budget: F5 dynamic batching is top priority. `scripts/bench.py` reports 1 vs 4 vs 8 concurrent
+  and the F5 / whisper / hunyuan contention slowdown.
 
 ## Owner answers (2026-10-17)
 
@@ -62,9 +76,9 @@ New directory `thaidub-server/` (self-contained):
 | `backend/app.py` | OpenAI-shaped `/v1/audio/speech`, `/v1/audio/transcriptions`, `/voices-manifest` |
 | `litellm.yaml` | model routes, rpm / max_parallel_requests, hunyuan defaults (top_k 20, top_p 0.6, rep 1.05) |
 | `voices/` + `voices/manifest.sha256` | bank; mismatched voice refused |
-| `compose.yaml` | home only: same image, `cpus`, `mem_limit`, GPU, cache volume |
 | `status.sh` / `make status` | /health, last GPU lines, last request lines |
-| `README.md` | Vast rent-and-run, home steps, add-a-voice |
+| `scripts/bench.py` | 1/4/8 concurrent speech, contention, VRAM, contract checks |
+| `README.md` | Vast/RunPod rent-and-run, destroy-and-recreate, add-a-voice |
 
 Not in scope: Grafana/Prometheus, autoscaling, multi-cloud layer, Postgres/Langfuse for this server.
 
@@ -84,8 +98,8 @@ Not in scope: Grafana/Prometheus, autoscaling, multi-cloud layer, Postgres/Langf
       `model.sample()` with batch > 1 (F5 sampler supports batch; `infer_batch_process` does not).
    c. fallback: official Triton/TRT-LLM runtime (heavier image, separate engine build per GPU arch).
 5. **Whisper** — faster-whisper (CTranslate2 fp16), unless the existing server has better.
-6. **VRAM on 16 GB home card** — F5 (~2-3 GB) + whisper-th + whisper-zh (large-v3 fp16 ~3-4 GB each, int8 less)
-   fits only with the coding profiles stopped (`make off`). Hunyuan only when `ENABLE_HUNYUAN=1` (24 GB card).
+6. **VRAM on the 24 GB card** — F5 + whisper-th (turbo) + whisper-zh (large-v3) fp16, plus hunyuan FP8 via vLLM
+   when `ENABLE_HUNYUAN=1`. Measured per model on the GPU (backend `/ready`).
 
 ## Steps (each small, reversible, one commit)
 
@@ -99,7 +113,7 @@ Not in scope: Grafana/Prometheus, autoscaling, multi-cloud layer, Postgres/Langf
 6. Monitoring: GPU log, per-request log (no bodies, no keys), `make status`.
 7. Batching spike (decision 4), report 1 vs 4 concurrent.
 8. Hunyuan behind `ENABLE_HUNYUAN` (Vast only), measured VRAM.
-9. Two-instance test (same manifest hash, cosine), README, Vast run.
+9. README, Vast run: cold vs warm start, bench 1/4/8 + contention, VRAM table.
 
 ## Open questions
 
@@ -119,13 +133,13 @@ Layout (repo root after the coding stack is removed):
 
 ```
 Dockerfile            image: code + deps, no weights
-compose.yaml          home GPU only: same image, cpus/mem_limit, GPU, ./cache + ./logs volumes
 models.yaml           model manifest (format below)
 litellm.yaml          LiteLLM routes + limits
 scripts/start.sh      container entrypoint (also the Vast onstart command)
 scripts/fetch_models.py   download models.yaml entries into $HF_HOME (pinned revision), print progress
 scripts/voices.py     `build` writes voices/manifest.sha256, `verify` checks it (exit 1 on mismatch)
 scripts/status.sh     `make status`: /health, last GPU lines, last request lines
+scripts/bench.py      throughput (1/4/8 concurrent), contention, VRAM, contract checks against a live server
 backend/              FastAPI app (package `backend`), tests in backend/tests/
 voices/               <voice_id>.neutral.th.wav + .txt, manifest.sha256
 ```
