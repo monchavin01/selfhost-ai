@@ -4,15 +4,12 @@
 .env
 
 # ============================================================
-# Runtime state (keep directory via state/.gitkeep)
+# Runtime data (model cache, logs) — mounted at /data
 # ============================================================
-state/active-profile
-state/last-switch-at
-state/switching
-state/locked
+data/
 
 # ============================================================
-# Python (admin-api)
+# Python
 # ============================================================
 __pycache__/
 *.py[cod]

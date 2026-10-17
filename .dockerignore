@@ -1,0 +1,9 @@
+.git
+.claude
+docs
+data
+**/__pycache__
+**/.pytest_cache
+.env
+*.md
+!backend/**/*.md
