@@ -25,6 +25,10 @@ help:
 	@echo "    make init       Copy .env.example to .env (first time only)"
 	@echo "    make build      Build both tags: light ($(IMAGE)) and hunyuan ($(HUNYUAN_IMAGE))"
 	@echo "    make push       Push both tags for the Vast/RunPod template"
+	@echo "    make vast-offers   List the cheapest Vast offers that meet the minimum spec"
+	@echo "    make vast-up       Rent the cheapest one, wait for READY (prints cold-start time)"
+	@echo "    make vast-tunnel   Forward :4000 (ThaiDub) and :8001 (bench) to the rental"
+	@echo "    make vast-ssh / vast-logs / vast-template / vast-down (asks before destroying)"
 	@echo "    make run        Test-run the image locally (GPU, --cpus $(CPUS), --memory $(MEMORY))"
 	@echo "    make status     Health, last GPU lines, last requests, voices hash"
 	@echo "    make bench      Throughput, contention, VRAM and contract checks against a live server"
@@ -50,6 +54,10 @@ push:
 run:
 	docker run --rm -it --gpus all --cpus $(CPUS) --memory $(MEMORY) --env-file .env \
 		-p 127.0.0.1:4000:4000 -v $(CURDIR)/data:/data $(IMAGE)
+
+.PHONY: vast-offers vast-up vast-ssh vast-tunnel vast-logs vast-template vast-down
+vast-offers vast-up vast-ssh vast-tunnel vast-logs vast-template vast-down:
+	./scripts/vast.sh $(subst vast-,,$@)
 
 .PHONY: status
 status:

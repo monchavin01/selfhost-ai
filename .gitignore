@@ -42,3 +42,6 @@ build/
 *.swp
 *.swo
 *~
+
+# Vast instance id written by scripts/vast.sh
+.vast-instance
