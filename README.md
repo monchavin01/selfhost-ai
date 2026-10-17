@@ -1,12 +1,13 @@
 # ThaiDub GPU model server
 
-Serves ThaiDub's AI models from one rented GPU (Vast.ai RTX 3090 24 GB; RunPod as fallback) behind LiteLLM's
-OpenAI-compatible API. One Docker image, no weights inside: models download into a cache at first start and are
-reused after that.
+Serves ThaiDub's AI models from one rented GPU (Vast.ai, RTX 3090 24 GB) behind LiteLLM's OpenAI-compatible API.
+There is no custom Docker image. A private Vast template starts a stock Vast PyTorch image, clones this repo at a
+git tag and runs [`scripts/bootstrap.sh`](scripts/bootstrap.sh). No weights are in the repo: models download at
+first start into `/workspace` and are reused after that.
 
 ```
-ThaiDub (Mac) ──ssh -L 4000──► LiteLLM :4000 ─┬─► backend :8001  f5-tts-th, whisper-th, whisper-zh
-                               (key, limits)  └─► vLLM    :8002  hunyuan-mt-7b   (ENABLE_HUNYUAN=1)
+ThaiDub (Mac) ──Tailscale──► gpu-vast:4000  LiteLLM ─┬─► backend :8001  f5-tts-th, whisper-th, whisper-zh
+                                            (key, limits) └─► vLLM    :8002  hunyuan-mt-7b   (ENABLE_HUNYUAN=1)
 ```
 
 | model | endpoint | engine | weights |
@@ -19,133 +20,182 @@ ThaiDub (Mac) ──ssh -L 4000──► LiteLLM :4000 ─┬─► backend :800
 Exact repos and commits are pinned in [`models.yaml`](models.yaml). The API contract and design decisions are in
 [`docs/plans/thaidub-gpu-server.md`](docs/plans/thaidub-gpu-server.md).
 
-## Image tags
+**Testing status:** only unit tests and static checks (`bash -n`, `py_compile`) have run, on the Mac. Nothing has
+run on a GPU or in a container yet. The first rental is the real test.
 
-`make build push IMAGE=ghcr.io/<you>/thaidub-gpu-server:<tag>` builds and pushes two tags:
+## The Vast template `thaidub-gpu`
 
-- `<tag>` (light): ubuntu base, F5 + whisper only. It is small, so a fresh rental pulls it fast. Use it by default.
-- `<tag>-hunyuan`: vLLM base, adds `hunyuan-mt-7b` for `ENABLE_HUNYUAN=1`. It is much larger.
+The owner keeps a private Vast template with these settings:
 
-CUDA comes from the torch cu128 wheels, so the host driver must be >= 570 (CUDA 12.8). The hunyuan tag uses a
-vLLM `-cu129` base and needs driver >= 575 (CUDA 12.9).
-
-## One-time setup (Mac)
-
-1. Install the Vast CLI and set your API key:
-
-   ```bash
-   pip install vastai
-   ```
-
-   ```bash
-   vastai set api-key <key>
-   ```
-
-2. Add your SSH public key in the Vast console under Account > SSH Keys. It applies to new instances only.
-3. Store secrets as Vast account env vars. Vast keeps them encrypted and injects them into every container:
-
-   ```bash
-   vastai create env-var LITELLM_MASTER_KEY <key>
-   ```
-
-   Optional: `HF_TOKEN`, and one of `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` for
-   [Claude Code on the box](#working-on-the-box-with-claude-code). Create the OAuth token with
-   `claude setup-token` on the Mac (needs a paid Claude plan).
-4. Build and push both image tags (see [Image tags](#image-tags)). Run this on any machine with Docker and enough
-   disk, not on the Mac:
-
-   ```bash
-   make build push IMAGE=ghcr.io/<you>/thaidub-gpu-server:<tag>
-   ```
-
-5. Create `.env` and edit `IMAGE`, `ENABLE_HUNYUAN` and `DEFAULT_VOICE`:
-
-   ```bash
-   make init
-   ```
-
-## Rent in one command
-
-Minimum spec used by every `vast-*` command:
-
-| requirement | value |
+| setting | value |
 |---|---|
-| GPU | RTX 3090 24 GB x 1 |
-| host | verified, reliability >= 0.99 |
-| CUDA | >= 12.8 (>= 12.9 automatically when `ENABLE_HUNYUAN=1`, because the vLLM base needs driver >= 575) |
-| CPU / RAM | >= 8 vCPU, >= 32 GB |
-| disk | >= 100 GB |
-| network | >= 500 Mbps down, >= 200 Mbps up |
+| Base image | `vastai/pytorch:2.11.0-cuda-12.8.1-py312-24.04-2026-10-16` (Ubuntu 24.04, CUDA 12.8.1) |
+| Launch mode | Interactive shell server, SSH |
+| Disk | 100 GB |
+| Machine filter | 1x RTX 3090 24 GB, Taiwan, verified, reliability >= 0.99 |
+| Template env | `LITELLM_MASTER_KEY`, `TS_AUTHKEY`, `HF_TOKEN` (and `ENABLE_HUNYUAN=1` if wanted) |
 
-1. List the matching offers (10 cheapest):
+`DATA_DIRECTORY=/workspace/` comes from the base image.
 
-   ```bash
-   make vast-offers
-   ```
+In the template's image field, replace `@vastai-automatic-tag` with the exact digest so the base never drifts:
 
-2. Rent the cheapest offer. It uploads `voices/`, waits for READY and prints the cold-start time (create to running, running to READY):
+```
+vastai/pytorch:2.11.0-cuda-12.8.1-py312-24.04-2026-10-16@sha256:1b4c88782699223103da1aafcc92370dcc1691ef3c8f9907ff77c9db27b22869
+```
+
+That is the amd64 digest.
+
+### On-start Script
+
+Paste this exactly:
+
+```
+REPO=/workspace/selfhost-ai; TAG=v0.1.0
+if [ -d "$REPO/.git" ]; then git -C "$REPO" fetch -q --depth 1 origin tag "$TAG" && git -C "$REPO" checkout -q -f "$TAG"; else git clone -q --depth 1 --branch "$TAG" https://github.com/monchavin01/selfhost-ai.git "$REPO"; fi
+nohup bash "$REPO/scripts/bootstrap.sh" > /workspace/bootstrap.log 2>&1 &
+entrypoint.sh
+```
+
+Why `entrypoint.sh` is the last line: Vast's base-image `entrypoint.sh` ends by `exec`ing `boot_default.sh`, so
+any line after it may never run. Vast's template docs also say to call the original entrypoint at the end. Our
+lines only start `bootstrap.sh` in the background, so they do not block Vast's own init.
+Sources: `ROOT/opt/instance-tools/bin/entrypoint.sh` in github.com/vast-ai/base-image at commit `7a73f7b`, and
+docs.vast.ai/guides/templates/template-settings.
+
+Do not create `~/.no_auto_tmux`. Keep Vast's auto-tmux so your SSH sessions survive an iTerm disconnect.
+
+### What `bootstrap.sh` does
+
+1. Installs `ffmpeg` and `rsync` with apt if missing.
+2. Installs uv 0.13.1 and builds the venvs from `locks/*.txt` (hash-pinned; `make lock` regenerates them).
+3. Runs Tailscale 1.104.1 in userspace mode under supervisord: `tailscale up --auth-key=file:... --hostname gpu-vast`.
+   The key is never in argv or logs.
+4. Downloads the models listed in `models.yaml` into `/workspace/hf`.
+5. Waits for the voice bank (see [Voice bank](#voice-bank)).
+6. Starts backend, LiteLLM and (if enabled) vLLM under supervisord with autorestart, then runs a warm-up.
+7. Prints `cold start total`, then `READY`.
+8. Installs Claude Code 2.1.292 for SSH sessions.
+
+It is idempotent: rerunning it or rebooting the box reuses everything under `/workspace`. Secrets are masked in the log.
+
+### Reaching the box over Tailscale
+
+In userspace mode `tailscaled` dials inbound tailnet TCP to `127.0.0.1:<port>`
+([tailscale v1.104.1 `wgengine/netstack/netstack.go`, `acceptTCP`, `case isTailscaleIP: dialIP = ipv4Loopback`](https://github.com/tailscale/tailscale/blob/v1.104.1/wgengine/netstack/netstack.go#L1773)).
+So LiteLLM on `:4000` is reachable at `gpu-vast:4000`.
+
+- **Verified from source only, not yet tested on a box.** If it fails, use `make vast-tunnel` (SSH forward) instead.
+- Backend `:8001` has no auth and is reachable from the tailnet too. If other people share your tailnet, restrict
+  it with a Tailscale ACL.
+
+### Hunyuan (optional)
+
+Set `ENABLE_HUNYUAN=1` in the template env. vLLM 0.31.0 PyPI wheels are CUDA 13, so the host needs driver >= 580;
+`scripts/vast.sh` then filters offers to `cuda >= 13.0`.
+
+## Rent and run
+
+1. **One-time on the Mac**
+   - `uv tool install vastai`, then `vastai set api-key <key>`.
+   - Add your SSH public key in the Vast console (applies to new instances only).
+   - Put the Mac on the same tailnet (Tailscale app).
+   - Create a reusable or ephemeral tagged Tailscale auth key and set it as `TS_AUTHKEY` in the template.
+   - Run `make init`, then fill `.env`: `VAST_TEMPLATE_HASH`, `LITELLM_MASTER_KEY`, `LITELLM_URL=http://gpu-vast:4000`.
+
+2. **Rent**
+   - `make vast-up` needs the template hash. It rents the cheapest matching offer, uploads the voices and waits for READY.
+   - Or rent from the web console with the template, then run `make vast-voices`.
 
    ```bash
    make vast-up
    ```
 
-3. Open the tunnel and keep that terminal open:
+3. **Watch the log over SSH**
+   - `make vast-logs`, or from iTerm: `ssh -p <port> root@<host>` then `tail -f /workspace/bootstrap.log`.
+   - Service logs are in `/workspace/logs/*.log`.
+   - On the box, `status.sh` shows supervisor, health, GPU and recent requests:
 
    ```bash
-   make vast-tunnel
+   LITELLM_MASTER_KEY=... /workspace/selfhost-ai/scripts/status.sh
    ```
 
-   Point ThaiDub at `http://localhost:4000/v1` with `LITELLM_API_KEY=<LITELLM_MASTER_KEY>`. Port 8001 (backend,
-   no auth) is forwarded too, only for `make bench` and the voices check.
-4. Confirm it is the same voice bank as last time. The `sha256` must match the previous rental:
+4. **Check from the Mac** (on the tailnet, with `$LITELLM_MASTER_KEY` in your environment)
+
+   LiteLLM is alive:
 
    ```bash
-   curl -s localhost:8001/voices-manifest
+   curl -s http://gpu-vast:4000/health/liveliness
    ```
+
+   A wrong key gives `401`:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer wrong" http://gpu-vast:4000/v1/models
+   ```
+
+   Speech:
+
+   ```bash
+   curl -s http://gpu-vast:4000/v1/audio/speech \
+     -H "Authorization: Bearer $LITELLM_MASTER_KEY" -H 'Content-Type: application/json' \
+     -d '{"model":"f5-tts-th","input":"สวัสดีครับ","voice":"default","response_format":"wav"}' \
+     -o /tmp/t.wav
+   ```
+
+   It should print `RIFF`:
+
+   ```bash
+   head -c 4 /tmp/t.wav
+   ```
+
+   Thai transcription:
+
+   ```bash
+   curl -s http://gpu-vast:4000/v1/audio/transcriptions \
+     -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     -F file=@/tmp/t.wav -F model=whisper-th -F language=th -F temperature=0 -F response_format=json
+   ```
+
+   Chinese transcription with segment and word timestamps (prints both counts):
+
+   ```bash
+   curl -s http://gpu-vast:4000/v1/audio/transcriptions \
+     -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     -F file=@/tmp/t.wav -F model=whisper-zh -F response_format=verbose_json \
+     -F 'timestamp_granularities[]=segment' -F 'timestamp_granularities[]=word' \
+     | python3 -c 'import sys,json; d=json.load(sys.stdin); print("segments", len(d.get("segments", [])), "words", len(d.get("words", [])))'
+   ```
+
+5. **Point ThaiDub at it**, in its `.env`:
+
+   ```
+   LITELLM_BASE_URL=http://gpu-vast:4000/v1
+   LITELLM_API_KEY=<LITELLM_MASTER_KEY>
+   ```
+
+6. **Destroy and recreate**
+   - Note the voice bank hash: `curl -s http://gpu-vast:8001/voices-manifest`.
+   - Run `make vast-down` (destroys the rental and its disk, after you type the instance id), then rent again.
+   - The same tag gives the same code, models and bank hash.
+   - Cold start downloads everything again unless a Vast volume is mounted at `/workspace`. A volume costs storage
+     while idle.
+   - To upgrade, push a new git tag and change `TAG` in the On-start Script.
 
 Other commands:
 
 ```bash
-make vast-ssh      # shell on the rented box
+make vast-offers   # 10 cheapest matching offers
 ```
 
 ```bash
-make vast-logs     # tail -f /data/start.log (phase fetch, phase load, phase warm-up, cold start total, READY)
+make vast-ssh      # shell on the rental
 ```
 
 ```bash
-make vast-down     # destroys the rental AND its disk, after you type the instance id
+make vast-tunnel   # fallback: forward :4000 and :8001 over SSH (then use http://localhost:4000)
 ```
 
 The rental id is kept in `.vast-instance` (never commit it).
-
-### Web console alternative
-
-```bash
-make vast-template
-```
-
-This creates a private template (`thaidub-gpu`). Open `https://cloud.vast.ai/?template_id=<hash>` with the
-`hash_id` from the output to rent in one click from the browser. SSH launch mode replaces the image entrypoint, so
-the template's on-start command is `/app/scripts/vast-onstart.sh`, which starts the server.
-
-## Working on the box with Claude Code
-
-The image ships Claude Code CLI 2.1.292 (pinned, auto-update off), plus git, tmux, vim-tiny and node.
-
-```bash
-make vast-ssh
-```
-
-```bash
-cd /app && claude
-```
-
-- Auth comes from `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`). `vast-onstart.sh` passes it to SSH sessions
-  through `/etc/environment`, which is root-only.
-- The repo's `CLAUDE.md` agent rules and `.claude/settings.json` are in `/app`. The first `claude` run asks you to
-  trust the folder and install the ponytail and caveman plugins; after that they turn on every session.
-- `/app` is a copy without `.git`. To commit from the box, clone the repo there yourself.
 
 ## Agent rules
 
@@ -153,36 +203,11 @@ cd /app && claude
 change) and caveman full (terse replies) are on by default through `.claude/settings.json`, which enables the
 plugins from GitHub `DietrichGebert/ponytail` and `juliusbrussee/caveman`. Their hooks need node.
 
-## RunPod (fallback, not yet tried)
-
-Network volumes (Secure Cloud only) mount at `/workspace`, so set `HF_HOME=/workspace/hf`. Pods use the image's start
-command and env vars from the template. Open item: how RunPod's SSH reaches a custom image (sshd setup) still needs checking before the tunnel works there.
-
-### Destroy and recreate
-
-Instance disk is deleted on destroy, so the next rental downloads the weights again (cold start). To skip that, keep
-the cache on a provider volume:
-
-- **Vast:** create a volume, mount it at `/workspace`, and set `HF_HOME=/workspace/hf`. A volume costs storage
-  while no instance runs. Vast lists volumes per machine, so a recreated instance must be on the same machine to
-  reuse it. That last point is inferred from the docs; check it before relying on it.
-
-Rule of thumb: rent briefly and rarely, and let the instance disk re-download; rent daily, and use a volume. Steps:
-
-1. Note the voices `sha256`.
-2. `make vast-down`.
-3. `make vast-up`, wait for `READY`, and `make vast-tunnel` again.
-4. Check the `sha256` matches.
-
 ## Check and measure
 
-On the instance (`make vast-ssh`; if the key is not in your shell, pass it):
+On the box: `status.sh` as shown in [Rent and run](#rent-and-run), step 3.
 
-```bash
-LITELLM_MASTER_KEY=<key> /app/scripts/status.sh    # LiteLLM /health, last GPU lines, last requests, voices hash
-```
-
-From the Mac, through the tunnel (both ports forwarded):
+From the Mac, on the tailnet (or through `make vast-tunnel` with `LITELLM_URL=http://localhost:4000`):
 
 ```bash
 LITELLM_MASTER_KEY=<key> make bench    # F5 1/4/8 concurrent, contention, VRAM per model, contract checks
@@ -190,22 +215,15 @@ LITELLM_MASTER_KEY=<key> make bench    # F5 1/4/8 concurrent, contention, VRAM p
 
 `python3 scripts/bench.py --only speech|contention|vram|contract` runs one section.
 
-Logs live in `$LOG_DIR` (default `/data/logs`):
+Logs live in `/workspace/logs`:
 - `gpu.log`: utilisation %, VRAM used/total and temperature, every 5 s.
 - `requests.log`: model, duration and status per request. It holds no bodies and no keys.
 
-### Testing the image on a local NVIDIA box
-
-```bash
-make init          # creates .env — set LITELLM_MASTER_KEY
-make build run     # docker run with --gpus all --cpus 8 --memory 24g (override CPUS=, MEMORY=)
-```
-
 ## Voice bank
 
-The clips are cut from real dubbed audio, so they are **never in git or the image** (this repo is public). They live
-in your local `voices/` folder; only `voices/manifest.sha256` and `voices/README.md` are tracked. `make vast-up`
-uploads the folder to `/data/voices` on the box, and the server waits at start until the bank matches the manifest.
+The clips are cut from real dubbed audio, so they are **never in git** (this repo is public). They live in your
+local `voices/` folder; only `voices/manifest.sha256` and `voices/README.md` are tracked. `make vast-up` uploads the
+folder to `/workspace/voices` on the box with rsync, and the server waits at start until the bank matches the manifest.
 
 To add or change a voice:
 
@@ -217,19 +235,20 @@ To add or change a voice:
    make voices
    ```
 
-3. Upload to a running rental. No image rebuild is needed:
+3. Upload to a running rental:
 
    ```bash
    make vast-voices
    ```
 
 The server refuses any voice whose files don't match the manifest. It reads the bank at start, so restart the
-server (or recreate the rental) after changing voices.
+services (or recreate the rental) after changing voices.
 
 ## Configuration
 
-All settings come from env vars. See [`.env.example`](.env.example). Secrets (`LITELLM_MASTER_KEY`, `HF_TOKEN`) are
-never in git and never in logs.
+Server settings come from the Vast template env (`LITELLM_MASTER_KEY`, `TS_AUTHKEY`, `HF_TOKEN`, optional
+`ENABLE_HUNYUAN`, `DEFAULT_VOICE`, `F5_*`). Mac-side settings (`VAST_TEMPLATE_HASH`, `LITELLM_URL`, ...) live in
+`.env`. See [`.env.example`](.env.example). Secrets are never in git and never in logs.
 
 ## Unit tests
 
