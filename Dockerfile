@@ -29,6 +29,8 @@ COPY voices /app/voices
 COPY scripts /app/scripts
 COPY models.yaml litellm.yaml /app/
 
-ENV HF_HOME=/data/hf LOG_DIR=/data/logs VOICES_DIR=/app/voices
+# /data must exist: the Vast onstart line redirects into it before start.sh runs.
+RUN mkdir -p /data/hf /data/logs
+ENV HF_HOME=/data/hf LOG_DIR=/data/logs VOICES_DIR=/app/voices DEFAULT_VOICE=m_young_01
 EXPOSE 4000
 ENTRYPOINT ["/app/scripts/start.sh"]
