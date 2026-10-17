@@ -30,7 +30,7 @@ Errors: 400 bad input, 401 wrong key (LiteLLM), 404 unknown/refused voice, 429 +
 | `scripts/` | start, onstart, fetch, voices, status, bench, vast — bash or stdlib Python |
 | `models.yaml` | every model, pinned to a repo commit — no unpinned weights |
 | `litellm.yaml` | routes and limits; its header lists LiteLLM behaviours still to verify on the GPU |
-| `voices/` | `<voice_id>.neutral.th.wav` + `.txt` and `manifest.sha256` (`make voices` after any change) |
+| `voices/` | local only: `<voice_id>.neutral.th.wav` + `.txt` (gitignored); only `manifest.sha256` is tracked |
 
 ## Engineering practice
 
@@ -39,6 +39,8 @@ Errors: 400 bad input, 401 wrong key (LiteLLM), 404 unknown/refused voice, 429 +
 - Pin every version (images, pip, Claude Code). Comments only for the non-obvious why.
 - Tests describe business rules from the user's side (voice refused when its hash mismatches, verbose_json has
   words...). Flag purely presentational code to the owner instead of testing it by default.
+- The repo is PUBLIC. Never commit voice clips or transcripts (real people's voices, copyrighted lines), `.env`,
+  hostnames/IPs of private machines, or personal paths. Voices reach the box by rsync (`make vast-voices`).
 - Secrets only from env (`LITELLM_MASTER_KEY`, `HF_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`). Never in git, logs or
   command output; request logs hold model, duration and status only.
 - Present real trade-offs to the owner as a choice instead of picking silently.

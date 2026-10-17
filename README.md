@@ -83,7 +83,7 @@ Minimum spec used by every `vast-*` command:
    make vast-offers
    ```
 
-2. Rent the cheapest offer. It waits for READY and prints the cold-start time (create to running, running to READY):
+2. Rent the cheapest offer. It uploads `voices/`, waits for READY and prints the cold-start time (create to running, running to READY):
 
    ```bash
    make vast-up
@@ -201,14 +201,30 @@ make init          # creates .env — set LITELLM_MASTER_KEY
 make build run     # docker run with --gpus all --cpus 8 --memory 24g (override CPUS=, MEMORY=)
 ```
 
-## Add a voice
+## Voice bank
+
+The clips are cut from real dubbed audio, so they are **never in git or the image** (this repo is public). They live
+in your local `voices/` folder; only `voices/manifest.sha256` and `voices/README.md` are tracked. `make vast-up`
+uploads the folder to `/data/voices` on the box, and the server waits at start until the bank matches the manifest.
+
+To add or change a voice:
 
 1. Put `<voice_id>.neutral.th.wav` (24 kHz mono, at most 15 s) and `<voice_id>.neutral.th.txt` (the exact words
    spoken) in `voices/`. The `voice_id` is the file name before the first `.`.
-2. Run `make voices` to rebuild `voices/manifest.sha256`, then commit.
-3. Rebuild and push the image, then recreate the rental.
+2. Rebuild the manifest, then commit it (only the manifest is committed):
 
-The server refuses any voice whose files don't match the manifest.
+   ```bash
+   make voices
+   ```
+
+3. Upload to a running rental. No image rebuild is needed:
+
+   ```bash
+   make vast-voices
+   ```
+
+The server refuses any voice whose files don't match the manifest. It reads the bank at start, so restart the
+server (or recreate the rental) after changing voices.
 
 ## Configuration
 
