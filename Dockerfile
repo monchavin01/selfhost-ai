@@ -15,10 +15,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
 # node runs the ponytail/caveman Claude Code plugin hooks; apt's node is too old on the vLLM (ubuntu 22.04) base.
 COPY --from=node:22.23.3-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 
-# openssh-server + tmux: Vast/RunPod SSH sessions; git/less/vim: working on the box with Claude Code.
+# openssh-server + tmux: Vast/RunPod SSH sessions; rsync: voice bank upload (never in the image or git); git/less/vim: working on the box with Claude Code.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg libsndfile1 \
-      openssh-server tmux git less vim-tiny \
+      openssh-server rsync tmux git less vim-tiny \
  && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI, pinned (stable channel on 2026-10-17); updates come from rebuilding the image, not at runtime.
@@ -40,7 +40,6 @@ RUN uv venv --python 3.12 /opt/litellm \
 
 WORKDIR /app
 COPY backend /app/backend
-COPY voices /app/voices
 COPY scripts /app/scripts
 COPY models.yaml litellm.yaml CLAUDE.md /app/
 # Agent rules + plugin settings, so `cd /app && claude` starts with the repo's rules and ponytail/caveman.
@@ -48,6 +47,6 @@ COPY .claude/settings.json /app/.claude/settings.json
 
 # /data must exist: the Vast onstart line redirects into it before start.sh runs.
 RUN mkdir -p /data/hf /data/logs
-ENV HF_HOME=/data/hf LOG_DIR=/data/logs VOICES_DIR=/app/voices DEFAULT_VOICE=m_young_01
+ENV HF_HOME=/data/hf LOG_DIR=/data/logs VOICES_DIR=/data/voices DEFAULT_VOICE=m_young_01
 EXPOSE 4000
 ENTRYPOINT ["/app/scripts/start.sh"]

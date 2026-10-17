@@ -46,7 +46,11 @@ pids+=($!)
 
 t=$(ts); "$BACKEND_PY" "$APP/scripts/fetch_models.py"; echo "phase fetch: $(since "$t")"
 
-"$BACKEND_PY" "$APP/scripts/voices.py" verify || echo "WARNING: voice bank mismatch; backend will refuse bad voices" >&2
+# The voice bank is uploaded after the box starts (make vast-voices / vast-up), never baked into the image.
+until "$BACKEND_PY" "$APP/scripts/voices.py" verify; do
+  echo "waiting for the voice bank in ${VOICES_DIR:-/data/voices} (upload: make vast-voices)"
+  sleep 15
+done
 
 # CTranslate2 needs the cuDNN 9 / cuBLAS 12 libs bundled with the torch wheels; scoped to the backend only.
 NV=$("$BACKEND_PY" -c 'import site;print(site.getsitepackages()[0])')/nvidia

@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-VOICES_DIR = Path(os.environ.get("VOICES_DIR", "/app/voices"))
+VOICES_DIR = Path(os.environ.get("VOICES_DIR", "/data/voices"))
 MANIFEST = VOICES_DIR / "manifest.sha256"
 
 

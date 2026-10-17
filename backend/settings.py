@@ -20,7 +20,7 @@ class Settings:
     @classmethod
     def from_env(cls, env: dict[str, str] | os._Environ = os.environ) -> "Settings":
         return cls(
-            voices_dir=Path(env.get("VOICES_DIR", "/app/voices")),
+            voices_dir=Path(env.get("VOICES_DIR", "/data/voices")),
             log_dir=Path(env.get("LOG_DIR", "/data/logs")),
             models_manifest=Path(env.get("MODELS_MANIFEST", "/app/models.yaml")),
             batch_max=int(env.get("F5_BATCH_MAX", "8")),

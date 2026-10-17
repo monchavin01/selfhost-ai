@@ -43,5 +43,10 @@ build/
 *.swo
 *~
 
+# Voice clips are cut from real dubbed audio: never in git (the repo is public). Only the manifest is tracked.
+voices/*
+!voices/manifest.sha256
+!voices/README.md
+
 # Vast instance id written by scripts/vast.sh
 .vast-instance
