@@ -102,11 +102,15 @@ upload_voices() { # host port; retries while sshd is still coming up
 cmd_logs() { with_target _logs; }
 _logs() { ssh_run "$1" "$2" 'tail -f /workspace/bootstrap.log'; }
 
+_tailscale_logout() { ssh_run "$1" "$2" '/workspace/bin/tailscale --socket=/workspace/tailscale/tailscaled.sock logout'; }
+
 cmd_down() {
   local id answer; id=$(instance_id)
   echo "instance $id, label: $(vastai show instance "$id" --raw | json 'print(d.get("label"))')"
   read -r -p "type the instance id to destroy: " answer
   [ "$answer" = "$id" ] || die "id did not match; nothing destroyed"
+  # Free the tailnet name now, so the next rental gets gpu-vast again (not gpu-vast-1). Best effort.
+  with_target _tailscale_logout || echo "tailscale logout skipped (box unreachable); the ephemeral key cleans up later"
   vastai destroy instance "$id" -y
   rm -f "$STATE"
 }

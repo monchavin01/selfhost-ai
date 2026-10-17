@@ -99,7 +99,10 @@ Set `ENABLE_HUNYUAN=1` in the template env. vLLM 0.31.0 PyPI wheels are CUDA 13,
    - `uv tool install vastai`, then `vastai set api-key <key>`.
    - Add your SSH public key in the Vast console (applies to new instances only).
    - Put the Mac on the same tailnet (Tailscale app).
-   - Create a reusable or ephemeral tagged Tailscale auth key and set it as `TS_AUTHKEY` in the template.
+   - Create a Tailscale auth key that is **reusable, ephemeral and tagged** and set it as `TS_AUTHKEY` in the
+     template. Reusable: a stop/start of the same box logs in again with it. Ephemeral: a destroyed box drops out of
+     the tailnet, so the next rental gets the name `gpu-vast` again instead of `gpu-vast-1`. `make vast-down` also
+     logs the node out before destroying it.
    - Run `make init`, then fill `.env`: `VAST_TEMPLATE_HASH`, `LITELLM_MASTER_KEY`, `LITELLM_URL=http://gpu-vast:4000`.
 
 2. **Rent**
