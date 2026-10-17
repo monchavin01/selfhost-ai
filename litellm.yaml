@@ -1,0 +1,75 @@
+# RISKS TO VERIFY ON GPU (found by reading LiteLLM 1.105.1 source, wheel from pypi.org; docs were silent)
+#
+# 1. 429 + Retry-After. Key/team limits go through proxy/hooks/parallel_request_limiter_v3.py, which raises
+#    ProxyRateLimitError(429) with header `retry-after: <window_size>` (60 s). The per-model `rpm` below is
+#    enforced by the Router (model_list), not that hook; I did NOT find a Retry-After set for it. Test: send 300
+#    requests/min at whisper-th and read the 429 headers. If missing, give clients a LiteLLM virtual key
+#    with rpm limits (needs a DB, rejected) or put the limit in a small proxy in front.
+#    Docs (silent on headers): https://docs.litellm.ai/docs/proxy/users
+#    Source: litellm/proxy/hooks/parallel_request_limiter_v3.py (`_handle_rate_limit_exceeded`),
+#            litellm/proxy/common_request_processing.py (`_apply_router_cooldown_retry_after`, cooldown only)
+# 2. `seed` on /audio/speech is probably DROPPED. litellm.speech() (litellm/main.py ~l.8251) forwards only
+#    response_format, speed, instructions into optional_params. Client sends seed only if send_seed=True
+#    (default False), so the backend's F5_DEFAULT_SEED covers the default flow. Test seed pass-through with the
+#    backend logging the seed it received; fallback: LiteLLM pass-through endpoint for /audio/speech.
+#    Docs (silent): https://docs.litellm.ai/docs/text_to_speech
+# 3. Transcriptions: supported params are language, prompt, response_format, temperature, timestamp_granularities
+#    (litellm/llms/openai/transcriptions/whisper_transformation.py). So timestamp_granularities[] is forwarded;
+#    unverified: multipart array naming and whether `language=""` is kept or dropped (empty string may be
+#    treated as unset, which is fine = auto-detect, but test).
+#    Docs (silent on params): https://docs.litellm.ai/docs/audio_transcription
+# 4. Logging: `turn_off_message_logging` only affects logging callbacks, not the proxy's stdout request lines.
+#    Docs: https://docs.litellm.ai/docs/proxy/logging . Check proxy stdout contains no prompts/keys with
+#    LITELLM_LOG=INFO. The backend writes its own requests.log (the one status.sh tails).
+# 5. mode: audio_speech for custom openai-compatible api_base is not shown in docs; the Router must route
+#    /audio/speech by model name. Test with the warm-up in scripts/start.sh.
+
+model_list:
+  - model_name: f5-tts-th
+    litellm_params:
+      model: openai/f5-tts-th
+      api_base: http://127.0.0.1:8001/v1
+      api_key: unused   # backend has no auth
+      rpm: 180
+      max_parallel_requests: 4
+    model_info:
+      mode: audio_speech
+
+  - model_name: whisper-th
+    litellm_params:
+      model: openai/whisper-th
+      api_base: http://127.0.0.1:8001/v1
+      api_key: unused
+      rpm: 250
+      max_parallel_requests: 8
+    model_info:
+      mode: audio_transcription
+
+  - model_name: whisper-zh
+    litellm_params:
+      model: openai/whisper-zh
+      api_base: http://127.0.0.1:8001/v1
+      api_key: unused
+      rpm: 60
+      max_parallel_requests: 4
+    model_info:
+      mode: audio_transcription
+
+  # Only reachable when ENABLE_HUNYUAN=1 (vLLM on :8002). Temperature comes from the client (0.7).
+  - model_name: hunyuan-mt-7b
+    litellm_params:
+      model: openai/hunyuan-mt-7b
+      api_base: http://127.0.0.1:8002/v1
+      api_key: unused
+      extra_body:
+        top_k: 20
+        top_p: 0.6
+        repetition_penalty: 1.05
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  turn_off_message_logging: true
+  json_logs: true
+  drop_params: false
