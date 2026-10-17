@@ -1,0 +1,11 @@
+# torch/torchaudio come from the image's CUDA wheel (Dockerfile); f5-tts-th would otherwise pull a default build.
+f5-tts-th==1.0.9
+faster-whisper==1.2.1
+numpy==1.26.4  # f5-tts-th caps numpy<=1.26.4
+fastapi==0.143.3
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+soundfile==0.14.0
+pyyaml==6.0.3
+# shortcut: left to the resolver because transformers (via f5-tts-th) bounds it; pin once a GPU build resolves it.
+huggingface_hub
