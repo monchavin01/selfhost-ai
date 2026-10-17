@@ -23,7 +23,7 @@ class Settings:
             voices_dir=Path(env.get("VOICES_DIR", "/app/voices")),
             log_dir=Path(env.get("LOG_DIR", "/data/logs")),
             models_manifest=Path(env.get("MODELS_MANIFEST", "/app/models.yaml")),
-            batch_max=int(env.get("F5_BATCH_MAX", "4")),
+            batch_max=int(env.get("F5_BATCH_MAX", "8")),
             batch_wait_ms=int(env.get("F5_BATCH_WAIT_MS", "15")),
             default_seed=int(env.get("F5_DEFAULT_SEED", "0")),
             default_voice=env.get("DEFAULT_VOICE", "m_young_01"),

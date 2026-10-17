@@ -31,7 +31,7 @@ model_list:
       api_base: http://127.0.0.1:8001/v1
       api_key: unused   # backend has no auth
       rpm: 180
-      max_parallel_requests: 4
+      max_parallel_requests: 8   # = F5_BATCH_MAX: throughput is the whole budget on one card (owner, 2026-10-17)
     model_info:
       mode: audio_speech
 
