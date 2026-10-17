@@ -3,22 +3,16 @@
 
   fetch_models.py                 download all enabled entries
   fetch_models.py --get NAME KEY  print one manifest field (repo / revision), used by start.sh
-Same models.yaml format as backend/models_manifest.py; parsed directly here so the script has no backend import.
 """
 import os
 import sys
 import time
 from pathlib import Path
 
-import yaml
 from huggingface_hub import snapshot_download
 
-MANIFEST = Path(os.environ.get("MODELS_YAML", Path(__file__).resolve().parent.parent / "models.yaml"))
-
-
-def enabled(spec: dict) -> bool:
-    flag = spec.get("enabled_by")
-    return flag is None or os.environ.get(flag, "0") == "1"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # the app dir, so `backend` imports
+from backend.models_manifest import enabled_models, load_models  # noqa: E402
 
 
 def fetch(name: str, spec: dict) -> bool:
@@ -41,11 +35,11 @@ def fetch(name: str, spec: dict) -> bool:
 
 
 def main() -> int:
-    models = yaml.safe_load(MANIFEST.read_text())["models"]
+    models = load_models()
     if len(sys.argv) == 4 and sys.argv[1] == "--get":
         print(models[sys.argv[2]][sys.argv[3]])
         return 0
-    results = [fetch(n, s) for n, s in models.items() if enabled(s)]
+    results = [fetch(name, spec) for name, spec in enabled_models(models).items()]
     return 0 if all(results) else 1
 
 
